@@ -30,6 +30,7 @@ struct kexec_args {
 };
 
 static inline void restore(void *kbase, struct kexec_args *uap);
+static inline void patch_aio(void *kbase);
 static inline void do_patch(void *kbase);
 
 __attribute__((section (".text.start")))
@@ -38,6 +39,7 @@ int kpatch(void *td, struct kexec_args *uap) {
     void * const kbase = (void *)rdmsr(0xc0000082) - xfast_syscall_off;
 
     do_patch(kbase);
+    patch_aio(kbase);
     restore(kbase, uap);
 
     return 0;
@@ -59,6 +61,64 @@ static inline void restore(void *kbase, struct kexec_args *uap) {
     for (int i = 0; i < 0x30; i += 8) {
         write64(kbase, 0x112d250 + i, sysent_661_save[i / 8]);
     }
+}
+
+__attribute__((always_inline))
+static inline void patch_aio(void *kbase) {
+    disable_cr0_wp();
+
+    const u64 aio_off = 0x4a1bb1;
+
+    // patch = {0xeb}
+    write8(kbase, aio_off, 0xeb);
+
+    // offset = 0x3d
+    // patch = {0xeb, 0x07}
+    write16(kbase, aio_off + 0x3d, 0x07eb);
+
+    // offset = 0x46
+    // patch = {0x41, 0x83, 0xbf, 0xa0, 0x04, 0x00, 0x00, 0x00, 0x90}
+    write64(kbase, aio_off + 0x46, 0x00000004a0bf8341);
+    write8(kbase, aio_off + 0x4e, 0x90);
+
+    // offset = 0x57
+    // patch = {0x87}
+    write8(kbase, aio_off + 0x57, 0x87);
+
+    // offset = 0x64
+    // patch = {0xb7}
+    write8(kbase, aio_off + 0x64, 0xb7);
+
+    // offset = 0x7c
+    // patch = {0x87}
+    write8(kbase, aio_off + 0x7c, 0x87);
+
+    // offset = 0x89
+    // patch = {0xb7}
+    write8(kbase, aio_off + 0x89, 0xb7);
+
+    // offset = 0xa1
+    // patch = {0xbf}
+    write8(kbase, aio_off + 0xa1, 0xbf);
+
+    // offset = 0xad
+    // patch = {0xbf}
+    write8(kbase, aio_off + 0xad, 0xbf);
+
+    // offset = 0xb9
+    // patch = {0xbf}
+    write8(kbase, aio_off + 0xb9, 0xbf);
+
+    // offset = 0xc5
+    // patch = {0xbf}
+    write8(kbase, aio_off + 0xc5, 0xbf);
+
+    // offset = 0xd4
+    // patch = {0x49, 0x8b, 0xff}
+    write16(kbase, aio_off + 0xd4, 0x8b49);
+    write8(kbase, aio_off + 0xd6, 0xff);
+
+    enable_cr0_wp();
 }
 
 __attribute__((always_inline))
@@ -132,7 +192,7 @@ static inline void do_patch(void *kbase) {
     //     vm_map_unlock(map);
     //     return (KERN_PROTECTION_FAILURE);
     // }
-    write32(kbase, 0x264c0a, 0);
+    write16(kbase, 0x264c08, 0x04eb);
 
     // TODO: Description of this patch. patch sys_dynlib_load_prx()
     write16(kbase, 0x94ec1, 0xe990);
